@@ -1,0 +1,558 @@
+Все поддерживаемые команды CURL:
+curl -s 'localhost:9200/_cat/'
+
+Просмотр состояние кластера:
+curl -s -XGET localhost:9200/_cluster/health?pretty
+curl -s 'localhost:9200/voip_conn-2016.09.30/_search?pretty=1&size=1000'  -- вывести больше записей
+http://stackoverflow.com/questions/8829468/elasticsearch-query-to-return-all-records
+
+Общая статистика по нодам, ноде:
+curl -XGET 'http://localhost:9200/_nodes/es36.january.mgts.ru/stats?pretty'
+
+backup-es --from-date=2016.01.03 --to-date=2016.01.03 http_conn
+
+Проверка статуса (загрузки нодов) кластера:
+curl -s 'localhost:9200/_cat/nodes?h=host,ip,heapPercent,disk.avail,load&v'|sort -k1
+
+
+
+service elasticsearch status
+Просмотр индексов:  
+curl -s -XGET localhost:9200/_cat/indices
+
+Удаление индексов со спецсимволами
+ curl --data-urlencode -XDELETE  'localhost:9200/3b%b2f%88%c8%8f&port=64839&uploaded=2'
+
+for i in `curl -s -XGET localhost:9200/_cat/indices | grep -v conn | awk '{print $3}'`; do curl -XDELETE "localhost:9200/$(echo -ne "$i" | xxd -plain | tr -d '\n' | sed 's/\(..\)/%\1/g')"; done
+Спопоб удаления 2.
+1 - посмотреть через  curator show indices  --all-indices | more
+2 берем имя корявого индекса и вставляем в консоль разработчика на firefox (по F12 -> Console -> encodeURI(корявое имя индекса))
+3 - подставляем преобразованное имя индекса в куратор для удаления. Скопировать полученную строку без кавычек и выполнить в curl:
+curl -XDELETE 'localhost:9200/<закодированное имя индекса'
+
+
+Просмтор шардов:
+curl -s -XGET localhost:9200/_cat/shards | grep -i INIT
+
+Наличие данных в определенном индексе:
+curl -s -XGET localhost:9200/conn_aaa-2017.02.02/_search?pretty
+
+Поиск данных по определенному индексу и определенным параметрам:
+в kopf-е вверху забиваем /<INDEX>/_search?pretty' -d '
+внизу - пиишем условие поиска( как в essearcher-е отображается)
+
+Поиск в kopf - выставляем /_search?pretty - POST и начало:
+{
+  "query": {
+    "filtered": {
+      "filter": {
+        "and": {
+          "filters": [
+            {
+			
+Поиск с сортировкой в kopf:
+ перед условием необходимо вставлять:
+curl -s -XPOST localhost:9200/aaa-2017.03.21/_search?pretty  '{
+  "sort": [
+    {
+      "start_time": {
+        "order": "desc"
+      }
+    }
+  ]
+}
+{
+    "query": {
+        "filtered": {
+            "filter": [
+                {
+                    "bool": {
+                        "must": [
+                            {
+                                "range": {
+                                    "conn_time": {
+                                        "gte": 1490043601
+                                    }
+                                }
+                            },
+                            {
+                                "range": {
+                                    "conn_time": {
+                                        "lte": 1490054401
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+}'
+
+
+
+пример 1: ищем всех пользователей с именем Ivan
+$ curl -XGET 'http://localhost:9200/<INDEX>/_search?q=firstname:Ivan&pretty=true'
+
+Собрать статистику hot_threads:
+curl -XGET 'http://localhost:9200/_nodes/{NodeId}/hot_threads?threads=1000&ignore_idle_threads&interval=3000&pretty' >> hot_threads_from_jan_data_esd2
+, где NodeID - имя ноды из конфига.
+
+Удаление индекса:
+curl -s -XDELETE "localhost:9200/at-20fil"
+
+Закрытие индекса:
+for j in $(curl 'localhost:9200/_cat/indices?v' | awk '{print $3}' | cut -d '-' -f1 | sort -u); do for i in $(curl 'localhost:9200/_cat/indices?v' | grep open | sort -u | awk '{print $3}' | grep $j | head -n -80); do echo "curl -XPOST 'localhost:9200/$i/_close'";done ; done
+
+for i in `curl 'localhost:9200/_cat/indices?v' | grep open | grep flow | awk '{print $3}' | sort -u | head -1`; do curl -XPOST "localhost:9200/$i/_close"; done;
+
+Закрытие через куратора: 
+/opt/curator-master/run_curator.py --logfile /var/log/elasticsearch/curator.log --host 127.0.0.1 --port 9200 close indices --regex '^flow_conn-*' --older-than 150  --time-unit days --timestring '\%Y.\%m.\%d'
+
+
+Очистка кэшей на всем кластере:
+curl -XPOST 'http://localhost:9200/_cache/clear'
+по индексу
+curl -XPOST 'http://localhost:9200/flow*/_cache/clear'
+
+
+Непрогруженные шарды:
+curl -s -XGET localhost:9200/_cat/shards|grep UNASS
+
+curl -XPUT localhost:9200/_cluster/settings -d '{
+   "transient" : {
+          "cluster.routing.allocation.disk.watermark.low" : "90%"
+ "cluster.routing.allocation.disk.watermark.high" : "50gb",
+   "cluster.info.update.interval" : "1m"
+}
+}'
+
+Рероутинг UNASSIGNED шардов:
+for shard in $(curl -XGET http://localhost:9200/_cat/shards | grep UNASSIGNED | awk '{print $2}'); do
+    curl -XPOST 'localhost:9200/_cluster/reroute' -d '{
+        "commands" : [ {
+              "allocate" : {
+                  "index" : ftp-2017.11.20, 
+                  "shard" : 0, 
+                  "node" : "lKCrlv8cThiBP-Z7g62Biw", 
+                  "allow_primary" : "false"
+              }
+            }
+        ]
+    }'
+    sleep 5
+done
+
+Проверка места на снифферах:
+for i in $(awk '{print $1}' sniff.ip); do echo $i; ssh $i 'df -h | grep "sql"'; done
+, где sniff.ip - перечень ip-адресов снифферов.
+
+
+
+Остановка всех дата-нодов(shutdown - позволяет быстро проверить индексы и сегменты при старте) (servers_el_storages.txt - список IP дата-нод):
+for i in $(cat data_nodes.txt);do curl -XPOST http://$i:9200/_cluster/nodes/_local/_shutdown ; done
+
+# Полный останов всего кластера:
+
+$ curl -XPOST 'http://localhost:9200/_shutdown'
+
+
+Штатный запуск дата-нод:
+for i in $(cat servers_el_storeges.txt);do ssh $i service elasticsearch status & done
+
+Использование ansible (elasticsearch manager) (поставляется R&D в качестве rpm пакета):
+  su - ansible
+Посмотреть место на нодах:
+  ansible -i /opt/january-cluster-manager/production jan_cluster -m shell -a 'df -h |grep esloader'
+
+Старт кластера (обычно и сам сервис эластика и лоадеры):
+  ansible-playbook -i /opt/january-cluster-manager/production /opt/january-cluster-manager/start.yml
+ 
+Остановка сервисов лоадеров:
+  ansible -i /opt/january-cluster-manager/production jan_cluster -m shell -a 'service esloader stop' --sudo
+
+Проверка запуска процесса Эластика на нодах:
+  ansible -i /opt/january-cluster-manager/production --sudo -m shell -a "ps aux | grep java" all
+  
+====================
+Полезные скрипты
+====================
+Занятость съемников
+date; for i in $(awk '{print $1}' /root/sniff.ip); do echo $i; ssh $i 'df -m | grep "sql"'; done
+Забиты ли разделы лоадера
+date; for i in $(awk '{print $1}' /root/data.ip); do echo $i; ssh $i 'df -m | grep "esloader"'; done
+Использование свопа на нодах
+for i in $(awk '{print $1}' /root/data.ip); do echo $i; ssh $i 'free -m | grep "Swap"'; done
+
+Очереди bulk запросов на нодах
+watch -d -n 10 "curl -s localhost:9200/_cat/thread_pool | sort"
+18. Увеличение thread (для увеличения активных балок и обрабатываемых)
+curl -XPUT 'localhost:9200/_cluster/settings' -d '{
+"persistent": { 
+"threadpool.bulk.size": 60,
+"threadpool.bulk.queue_size": 10000
+}
+}'
+
+
+Статус лоадеров
+date; for i in $(awk '{print $1}' /root/data.ip); do echo $i; ssh $i 'service esloader status'; done
+
+====================
+Диагностика ластика
+====================
+curl -s 'localhost:9200/_cat/nodes?h=host,ip,heapPercent,disk.avail,load&v'|sort -k1
+curl -XGET 'http://localhost:9200/_nodes/hot_threads?threads=1000&interval=3000ms&pretty=true' > threads.txt
+curl -XGET 'http://localhost:9200/_cluster/pending_tasks?pretty=true' > pending_task.txt
+curl -XGET 'http://localhost:9200/_nodes/stats/thread_pool?pretty=true' > pool.txt
+curl -XGET 'http://localhost:9200/_nodes/stats/breaker?pretty=true' > breaker.txt
+curl -XGET 'http://localhost:9200/_nodes/stats?pretty=true' > stats.txt
+
+Может пригодится для подсчета места занимаемого индексами в Эластике
+#!/bin/bash
+avail_types=$(curl -s 'localhost:9200/_cat/indices?v' | sort -k3 | awk {'print $3}' | awk -F'-' '{print $1}' | grep -v index | sort -u )
+for type in $avail_types; do
+curl -s -XGET localhost:9200/_cat/indices?bytes=b | grep $type | awk '{print $8}' | echo "$type `awk 'BEGIN {s =0} {s+=$1} END {print s/1024/1024/1024 " Gb"}'`"
+done
+==================
+Анзибль
+==================
+
+su - ansible
+ansible -i /opt/january-cluster-manager/production jan_cluster -m shell -a 'service esloader stop' --sudo
+стопнется, дам хедшот команд
+
+Готовим кластер к рестарту https://www.elastic.co/guide/en/elasticsearch/reference/2.1/restart-upgrade.html 
+PUT /_cluster/settings
+{
+  "persistent": {
+    "cluster.routing.allocation.enable": "none"
+  }
+}
+
+POST /_flush/synced пока н останется проблем
+
+ ansible-playbook -i /opt/january-cluster-manager/production /opt/january-cluster-manager/stop.yml
+ иэтим убиваем
+
+проверяем не выжила ли на какой ноде жава
+date; for i in $(awk '{print $1}' /root/data.ip); do echo $i; ssh $i 'ps ax | grep "java" |grep -v grep'; done
+
+
+
+ самое главное отдельно стопнуть esloader
+ansible-playbook -i /opt/january-cluster-manager/production /opt/january-cluster-manager/start.yml
+ этим оживляем
+
+Ждем статуса кластера yellow (watch -d -n 30 'curl -s "localhost:9200/_cat/health"' )
+PUT /_cluster/settings
+{
+  "persistent": {
+    "cluster.routing.allocation.enable": "all"
+  }
+}
+
+
+ for i in $(awk '{print $1}' /root/sniff.ip); do echo $i; ssh $i 'df -h | grep "sql"'; done
+смотрим очереди
+ for i in $(awk '{print $1}' /root/sniff.ip); do echo $i; ssh $i 'service flowmaster stop'; done
+Управляем flowmaster  date; for i in $(awk '{print $1}' /root/sniff.ip); do echo $i; ssh $i 'service flowmaster status'; done
+восстанавливается
+
+
+====================
+Изменения в ESLOADER (чуть лучше чем было, но проблему не решают)
+====================
+  # !!! new value for transport layer
+  elasticsearch.client.transport.sniff: true
+
+====================  
+Cмена уровня логгирования в кластере
+====================
+  /_cluster/settings PUT
+  {
+    "transient": {
+      "logger._root": "INFO"
+    }
+  }
+  
+====================  
+Копирование конфигов лоадера на кластер
+====================  
+date; for i in $(awk '{print $1}' /root/data.ip); do echo $i; scp /opt/esloader/templates/*.json $i:/opt/esloader; done
+
+====================  
+Презагрузка одной ноды
+====================  
+https://www.elastic.co/guide/en/elasticsearch/reference/2.1/rolling-upgrades.html
+
+====================  
+Изменение числа одновременного ребалансирования шардов, по умолчанию значение 2
+====================  
+# localhost – меняем на host/ip мастер-ноды
+# 8 – число одновременно переносимых шардов, по умолчанию значение 2
+curl -XPUT localhost:9200/_cluster/settings -d '{
+  "transient" : {
+    "cluster.routing.allocation.cluster_concurrent_rebalance" : 8
+  }
+}'
+
+====================  
+Запрет аллокации шардов на сервере по его IP-адресу:
+====================  
+# localhost – меняем на host/ip мастер-ноды
+# 10.0.0.1 – следует заменить на IP-адрес сервера, выводимого из кластера
+curl -XPUT localhost:9200/_cluster/settings -d '{
+  "transient" : {
+    "cluster.routing.allocation.exclude._ip" : "10.0.0.1"
+  }
+}'
+
+====================  ====================  ====================  
+
+Быстрая диагностика проблем с памятью, чем занята куча
+curl -s localhost:9200/nodes/_local/_stats?pretty
+
+"memory_size_in_bytes"
+"memory_in_bytes"
+
+=========================================
+Переименовать индекс 
+
+ input {
+  elasticsearch {
+#    hosts => [ "es-m-01-jan-dv:9200", "es-m-02-jan-dv:9200" ]
+    hosts => [ "es-d-01-jan-dv", "es-d-02-jan-dv", "es-d-03-jan-dv", "es-d-04-jan-dv", "es-d-05-jan-dv", "es-d-06-jan-dv", "es-d-0
+7-jan-dv", "es-d-08-jan-dv", "es-d-09-jan-dv" ]
+    index => "flow-2015.11.13"
+#    size => 200000
+#    scroll => "3m"
+    docinfo => true
+    scan => true
+  }
+}
+output {
+  elasticsearch {
+    workers=>8
+    host => [ "es-m-01-jan-dv", "es-m-02-jan-dv" ]
+    protocol => "http"
+    index => "flow_conn-2015.11.13"
+    document_type => "flow"
+    document_id => "%{[@metadata][_id]}"
+  }
+  stdout {
+    codec => "dots"
+  }
+}
+ I just use Logstash with this config - https://gist.github.com/markwalkom/8a7201e3f6ea4354ae06  --пример переименоывания
+https://www.elastic.co/guide/en/logstash/1.5/config-examples.html   --описание и подробная информация о logstash 
+https://www.elastic.co/blog/logstash-2-0-0-released  --совместимость лагсташ и эластика
+
+На ДВ мастер 1 есть готовый пример от Андрея
+=======================================
+
+
+ ну вообще статус загрузки нод можно посмреь ь так:
+ Проверка статуса (загрузки нодов) кластера:
+curl -s 'localhost:9200/_cat/nodes?h=host,ip,heapPercent,load&v'|sort -k1
+ ====================
+Диагностика ластика
+====================
+curl -XGET 'http://localhost:9200/_nodes/hot_threads?threads=1000&interval=3000ms&pretty=true' > threads.txt
+curl -XGET 'http://localhost:9200/_cluster/pending_tasks?pretty=true' > pending_task.txt
+curl -XGET 'http://localhost:9200/_nodes/stats/thread_pool?pretty=true' > pool.txt
+curl -XGET 'http://localhost:9200/_nodes/stats/breaker?pretty=true' > breaker.txt
+curl -XGET 'http://localhost:9200/_nodes/stats?pretty=true' > stats.txt
+
+
+file:///D:/%D0%B7%D0%B0%D0%B3%D1%80%D1%83%D0%B7%D0%BA%D0%B8/Elastic/elasticsearch-kopf-master/_site/index.html#!/cluster
+
+Установить ноды на одном хосте:
+Для этого нужно поправить на ансибле параметр "кол-во нод на машине"
+и запустить 
+ansible-playbook  ./install-cluster.yml
+
+
+Посмотреть темплейты
+curl -XGET localhost:9200/_template/at
+Удалить 
+curl -XDELETE localhost:9200/_template/at
+Создаются темплейты при перезапуске esloader
+
+
+Закрытие больного шарда
+curl -XPOST 'localhost:9200/_cluster/reroute' -d '{"commands": [{"allocate": {"index": "http_conn-2016.10.15", "shard": 0, "node": "FaOY5xxCRuKXzpbzH6uXnA", "allow_primary": true }}]}'
+
+Запрет аллокации
+ curl -XPUT localhost:9200/_cluster/settings -d '
+{
+  "persistent" : {
+    "cluster" : {
+      "routing" : {
+        "rebalance" : {
+          "enable" : "none"
+        }
+      }
+    }
+  }
+ }
+ '
+
+ curl -XPUT localhost:9200/_cluster/settings -d '
+{
+  "persistent" : {
+    "cluster" : {
+      "routing" : {
+        "allocation" : {
+          "enable" : "all"
+        }
+      }
+    }
+  }
+ }
+ '
+
+Создание индексов
+curl -F "type=text/html" localhost:9200/tcp-2017.04.29
+
+
+
+Рероутинг UNASSIGNED шардов:
+
+for shard in $(curl -XGET http://localhost:9200/_cat/shards 
+ grep UNASSIGNED 
+ awk '{print $2}'); do
+    curl -XPOST 'localhost:9200/_cluster/reroute' -d '{
+        "commands" : [ {
+              "allocate" : {
+                  "index" : "at_conn-2016.02.07", 
+                  "shard" : $shard, 
+                  "node" : "es32.january.mgts.ru", 
+                  "allow_primary" : true --параметр очистит шард от данных
+              }
+            }
+        ]
+    }'
+    sleep 5
+done
+
+Перемещение шардов для started shard. (нормальный режим шарда)
+
+curl -XPOST 'localhost:9200/_cluster/reroute' -d '{
+    "commands" : [ {
+        "move" :
+            {
+              "index" : "flow_conn-2016.10.25", "shard": 15,
+              "from_node" : "es-d-10-jan-kvk.megafon.ru", "to_node" : "es-d-04-jan-kvk.megafon.ru"
+            }
+        }
+    ]
+}'
+
+Перемещение unassigned shard to a node, но для этого должна быть включена "allocation" 
+
+curl -XPOST 'localhost:9200/_cluster/reroute' -d '{
+    "commands" : [ 
+        {
+          "allocate" : {
+              "index" : "ftp-2017.11.20", "shard" : 0, "node" : "kvk-jan-data010-d1"
+          }
+        }
+    ]
+}'
+
+
+
+Проверить настройки 
+
+curl -XGET 127.0.0.1:9200/_cluster/settings?pretty
+
+
+
+Созданеи индексов на завтра
+ cat /opt/elasticsearch/scripts/create_index_tomorrow.sh
+#!/bin/bash
+
+avail_types=$(curl -s 'localhost:9200/_cat/indices?v' | sort -k3 | awk {'print $3}' | awk -F'-' '{print $1}' | sort -u | grep -v index)
+date=`date +%Y.%m.%d --date 'tomorrow'`
+url_prefix='http://localhost:9200/'
+
+for type in $avail_types; do
+        #echo ${url_prefix}${type}-${date}
+        curl -F "type=text/html" ${url_prefix}${type}-${date}  &> /dev/null &
+done
+
+
+
+
+--Увеличивает скорость инициализации шардов
+
+curl -XPUT localhost:9200/_cluster/settings -d '{
+    "transient" : {
+        "cluster.routing.allocation.node_initial_primaries_recoveries" : 30, --"initializing_shards" за раз
+        "cluster.routing.allocation.node_concurrent_recoveries" : 8,
+        "indices.recovery.max_bytes_per_sec" : "100mb"
+    }
+}'
+
+
+Отключение реплик на индексах
+/usr/bin/curator --logfile /var/log/curator.log replicas --count 0 indices --all-indices
+
+
+
+
+Равномерно разровнять данные, шарды размазать по индексу: 
+ curl -s -XPUT localhost:9200/tcp-2017.04.27/_settings -d '{
+"index.routing.allocation.total_shards_per_node": "2"
+}'
+
+
+Удаление реплик
+
+/usr/bin/curator --logfile /var/log/curator.log replicas --count 1 indices --regex '^flow-2017.04.27'
+
+
+Добавить строку в файл верез ansible
+ansible master-nodes -l rt_nn_el_january_master_01 -m lineinfile -b -a 'dest=/etc/elasticsearch/m1/elasticsearch.yml line="gateway.recover_after_time: 30m" insertafter="^gateway.recover_after.*"'
+
+ansible master-nodes -l rt_nn_el_january_master_01 -m lineinfile -b -a 'dest=/etc/elasticsearch/m1/elasticsearch.yml line="discovery.zen.ping_timeout: 30m" insertbefore="^discovery.zen.ping.unicast.hosts.*"'
+
+
+ ansible master-nodes -l rt_nn_el_january_master_01 -m lineinfile -b -a 'dest=/opt/esloader/config/resource/tcp.yml line="load.resource.tcp.threads.max: 15" insertbefore="^gateway.recover_after.*"'
+
+закоментить параметр
+ansible data-nodes -m lineinfile -b -a "regexp='(.*tcp.alias_prefix: flow)' line='#\1' dest=/opt/esloader/config/selectors-es2.yml backrefs=yes"
+
+Замена значения
+ 
+ ansible jan_cluster -m lineinfile -b -a 'dest=/opt/esloader/templates/2.0/voip.json regexp="^.*\"index.number_of_replic.*" line="\t\"index.number_of_replicas\": 1," backrefs=yes'
+ 
+ ansible master-nodes -l  -m lineinfile -b -a 'dest=/opt/esloader/config/resource/tcp.yml regexp="^.*\"oad.resource.tcp.threads.max*" line="\t\"load.resource.tcp.threads.max\": 30," backrefs=yes'
+
+
+
+Удаление данных с шардов
+for shard in $(curl -XGET http://localhost:9200/_cat/shards | grep UNASSIGNED | awk '{print $2}'); do
+    curl -XPOST 'localhost:9200/_cluster/reroute' -d '{
+        "commands" : [ {
+              "allocate" : {
+                  "index" : "t37", 
+                  "shard" : $shard, 
+                  "node" : "datanode15", 
+                  "allow_primary" : true
+              }
+            }
+        ]
+    }'
+    sleep 5
+done
+
+Отсутствующие индексы:
+curl -s -XGET http://localhost:9200/_cat/indices | awk '{print $3}' | awk 'BEGIN{FS="-"}{print $1}' | grep -v index | sort -u
+
+
+посмотреть физическое, на диске расположение шарда /var/lib/elasticsearch/january/nodes/0/indices/ftp-2017.11.19/
+
+посмотреть сегменты  curl 'http://localhost:9200/_cat/segments?v' 
